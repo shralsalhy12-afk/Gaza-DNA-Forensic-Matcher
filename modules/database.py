@@ -94,3 +94,36 @@ def run_batch_matching(threshold=70.0):
                 
     conn.close()
     return matches_found
+
+from modules.parser import parse_codis_xml, parse_fasta_str
+
+def insert_sample_from_sequencer_file(sample_code: str, file_path: str, file_type: str, is_remains: bool = True):
+    """
+    استيراد البيانات الجينية مباشرة من ملفات أجهزة التسلسل وتحويلها وتخزينها في قاعدة البيانات.
+    """
+    if file_type.lower() == 'codis':
+        profile = parse_codis_xml(file_path)
+    elif file_type.lower() == 'fasta':
+        profile = parse_fasta_str(file_path)
+    else:
+        print("[-] صيغة ملف غير مدعومة.")
+        return False
+
+    if not profile:
+        print("[-] تعذر استخراج البصمة الجينية من الملف.")
+        return False
+
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    enc_code = anonymize_id(sample_code)
+    table = "remains" if is_remains else "relatives"
+    col = "sample_code" if is_remains else "relative_code"
+    
+    cursor.execute(f"INSERT OR REPLACE INTO {table} ({col}, str_profile) VALUES (?, ?)",
+                   (enc_code, json.dumps(profile)))
+                   
+    conn.commit()
+    conn.close()
+    print(f"[✓] تم استيراد وحفظ البصمة الجينية من ملف {file_type.upper()} بنجاح للعينة: {sample_code}")
+    return True
