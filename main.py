@@ -1,42 +1,54 @@
 from modules.dna_matcher import calculate_str_match
 from modules.encryption import anonymize_id
-from modules.file_parser import load_dna_profile_from_file
 
 def main():
     print("=" * 60)
-    print("   Gaza DNA Forensic Matcher & Automated File Reader   ")
+    print("   Gaza DNA Forensic Matcher & Identification System   ")
+    print("   Humanitarian Disaster Victim Identification (DVI)   ")
     print("=" * 60)
 
-    # 1. إدخال وتشفير الهويات
-    unidentified_id = input("\n[?] أدخل المعرف الميداني للرفات: ").strip()
-    relative_id = input("[?] أدخل رقم هوية القريب المرجعي: ").strip()
-
+    # إدخال بيانات الرفات المجهولة
+    unidentified_id = input("\n[?] أدخل المعرف الميداني للرفات (أو مكان العثور): ").strip()
     encrypted_unidentified = anonymize_id(unidentified_id)
+
+    # إدخال بيانات القريب المرجعي
+    relative_id = input("[?] أدخل رقم هوية القريب المرجعي (أب/أم/ابن): ").strip()
     encrypted_relative = anonymize_id(relative_id)
 
-    print(f"\n[*] الهويات المشفرة:")
-    print(f"  - الرفات: {encrypted_unidentified}")
-    print(f"  - القريب: {encrypted_relative}")
+    print("\n[*] جاري تشفير البيانات وحمايتها بأعلى معايير الأمان الجنائي...")
+    print(f"  - معرف الرفات المشفر: {encrypted_unidentified}")
+    print(f"  - معرف القريب المشفر: {encrypted_relative}")
 
-    # 2. قراءة ملفات البصمة الوراثية الصادرة من جهاز الفحص
-    sample_file = input("\n[?] أدخل مسار ملف بصمة الرفات (مثال: sample.json): ").strip()
-    reference_file = input("[?] أدخل مسار ملف بصمة القريب (مثال: reference.json): ").strip()
+    # نموذج عينات STR الجينية (Standard CODIS Loci)
+    # ملاحظة: الأرقام تمثل عدد تكرارات الأليل في المواقع الجينية
+    sample_str = {
+        "D3S1358": [15, 18],
+        "vWA": [14, 17],
+        "FGA": [20, 24],
+        "D8S1179": [12, 13],
+        "D21S11": [28, 30]
+    }
 
-    sample_str = load_dna_profile_from_file(sample_file)
-    reference_str = load_dna_profile_from_file(reference_file)
+    reference_str = {
+        "D3S1358": [15, 16], # مطابقة أليل 15
+        "vWA": [14, 18],     # مطابقة أليل 14
+        "FGA": [20, 22],     # مطابقة أليل 20
+        "D8S1179": [12, 14], # مطابقة أليل 12
+        "D21S11": [29, 31]  # لا توجد مطابقة في هذا الموقع
+    }
 
-    if sample_str and reference_str:
-        print("\n[+] تم استخراج البيانات الجينية من الملفات بنجاح!")
-        result = calculate_str_match(sample_str, reference_str)
+    print("\n[*] جاري تحليل البصمات الوراثية وتطابق المواقع الجينية (STR Loci)...")
+    result = calculate_str_match(sample_str, reference_str)
 
-        print("\n" + "=" * 40)
-        print("       التقرير الجنائي التلقائي للمطابقة       ")
-        print("=" * 40)
-        print(f"  - عدد المواقع الجينية الملتئمة: {result['matching_loci']} / {result['total_loci']}")
-        print(f"  - نسبة التطابق الجيني: {result['match_percentage']}%")
-        print(f"  - النتيجة الجنائية: {result['status']}")
-    else:
-        print("\n[-] تعذر إكمال المطابقة لعدم اكتمال بيانات الملفات.")
+    print("\n" + "=" * 40)
+    print("       التقرير الجنائي المبدئي للمطابقة       ")
+    print("=" * 40)
+    print(f"  - عدد المواقع الجينية الملتئمة: {result['matching_loci']} / {result['total_loci']}")
+    print(f"  - نسبة التطابق الجيني: {result['match_percentage']}%")
+    print(f"  - النتيجة الجنائية: {result['status']}")
+
+    if result['mismatches']:
+        print(f"  - المواقع غير المتطابقة: {', '.join(result['mismatches'])}")
 
 if __name__ == "__main__":
     main()
