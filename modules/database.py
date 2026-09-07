@@ -2,15 +2,14 @@ import sqlite3
 import json
 from modules.encryption import anonymize_id
 from modules.dna_matcher import calculate_str_match
+from modules.parser import parse_codis_xml, parse_fasta_str
 
 DB_NAME = "forensic_database.db"
 
 def init_db():
-    """إنشاء الجداول الرئيسية لقاعدة البيانات الجنائية المحلية"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    # جدول الرفات المجهولة
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS remains (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,7 +18,6 @@ def init_db():
         )
     ''')
     
-    # جدول عائلات المفقودين
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS relatives (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,73 +29,36 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 def seed_sample_data():
-    """تعبئة قاعدة البيانات تلقائياً بمئات/مجموعات عينات تجريبية لاختبار الفحص الجماعي"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
-    # عينات رفات تجريبية
-    remains_samples = [
-        ("KY-2026-081", {"D3S1358": [15, 18], "vWA": [14, 17], "FGA": [20, 24], "D8S1179": [12, 13], "D21S11": [28, 30]}),
-        ("GZ-2026-102", {"D3S1358": [12, 14], "vWA": [15, 16], "FGA": [18, 22], "D8S1179": [10, 11], "D21S11": [25, 27]}),
-        ("RFA-2026-044", {"D3S1358": [16, 17], "vWA": [13, 18], "FGA": [21, 23], "D8S1179": [14, 15], "D21S11": [30, 32]})
+
+    sample_remains = [
+        ("REF-2026-001", {"D3S1358": [15, 18], "vWA": [14, 17], "FGA": [21, 24], "TH01": [6, 9.3]}),
+        ("REF-2026-002", {"D3S1358": [12, 16], "vWA": [15, 18], "FGA": [20, 22], "TH01": [7, 9]})
     ]
-    
-    # عينات أهالي مرجعية
-    relatives_samples = [
-        ("401234567", {"D3S1358": [15, 16], "vWA": [14, 18], "FGA": [20, 22], "D8S1179": [12, 14], "D21S11": [29, 31]}), # مطابقة مع العينة الأولى
-        ("908765432", {"D3S1358": [11, 13], "vWA": [15, 17], "FGA": [18, 20], "D8S1179": [10, 12], "D21S11": [25, 28]})  # مطابقة مع العينة الثانية
+
+    sample_relatives = [
+        ("FAM-PAL-101", {"D3S1358": [15, 17], "vWA": [14, 16], "FGA": [21, 25], "TH01": [6, 8]}), # نسبة مطابقة عالية جداً
+        ("FAM-PAL-102", {"D3S1358": [11, 14], "vWA": [12, 15], "FGA": [19, 23], "TH01": [5, 7]})  # نسبة مطابقة منخفضة
     ]
-    
-    for sample_code, profile in remains_samples:
-        enc_code = anonymize_id(sample_code)
+
+    for code, profile in sample_remains:
+        enc_code = anonymize_id(code)
         cursor.execute("INSERT OR IGNORE INTO remains (sample_code, str_profile) VALUES (?, ?)",
                        (enc_code, json.dumps(profile)))
-                       
-    for rel_code, profile in relatives_samples:
-        enc_code = anonymize_id(rel_code)
+
+    for code, profile in sample_relatives:
+        enc_code = anonymize_id(code)
         cursor.execute("INSERT OR IGNORE INTO relatives (relative_code, str_profile) VALUES (?, ?)",
                        (enc_code, json.dumps(profile)))
-                       
+
     conn.commit()
     conn.close()
 
-def run_batch_matching(threshold=70.0):
-    """خوارزمية الفحص التلقائي الشامل (Batch Matching Engine) لمقارنة كل الرفات مع كل العائلات"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT sample_code, str_profile FROM remains")
-    remains_list = cursor.fetchall()
-    
-    cursor.execute("SELECT relative_code, str_profile FROM relatives")
-    relatives_list = cursor.fetchall()
-    
-    matches_found = []
-    
-    # خوارزمية المسح التلقائي المتعدد المتقاطع (Cross-Matching)
-    for rem_code, rem_str in remains_list:
-        rem_profile = json.loads(rem_str)
-        for rel_code, rel_str in relatives_list:
-            rel_profile = json.loads(rel_str)
-            
-            result = calculate_str_match(rem_profile, rel_profile)
-            
-            # فلترة النتائج ذات احتمالية التطابق العالية
-            if result['match_percentage'] >= threshold:
-                matches_found.append({
-                    "remains_code": rem_code,
-                    "relative_code": rel_code,
-                    "percentage": result['match_percentage'],
-                    "status": result['status']
-                })
-                
-    conn.close()
-    return matches_found
 
-from modules.parser import parse_codis_xml, parse_fasta_str
-
-def insert_sample_from_sequencer_file(sample_code: str, file_path: str, file_type: str, is_remains: bool = True):
+def insert_sample_from_sequencer_file(sample_code: str, file_path: str, file_type: str, is_remains: bool = True) -> bool:
     """
     استيراد البيانات الجينية مباشرة من ملفات أجهزة التسلسل وتحويلها وتخزينها في قاعدة البيانات.
     """
@@ -120,10 +81,45 @@ def insert_sample_from_sequencer_file(sample_code: str, file_path: str, file_typ
     table = "remains" if is_remains else "relatives"
     col = "sample_code" if is_remains else "relative_code"
     
-    cursor.execute(f"INSERT OR REPLACE INTO {table} ({col}, str_profile) VALUES (?, ?)",
-                   (enc_code, json.dumps(profile)))
-                   
-    conn.commit()
+    try:
+        cursor.execute(f"INSERT OR REPLACE INTO {table} ({col}, str_profile) VALUES (?, ?)",
+                       (enc_code, json.dumps(profile)))
+        conn.commit()
+        print(f"[✓] تم استيراد وحفظ البصمة الجينية من ملف {file_type.upper()} بنجاح للعينة: {sample_code}")
+        return True
+    except Exception as e:
+        print(f"[-] خطأ أثناء الحفظ في قاعدة البيانات: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def run_batch_matching(threshold: float = 50.0):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT sample_code, str_profile FROM remains")
+    remains_list = cursor.fetchall()
+
+    cursor.execute("SELECT relative_code, str_profile FROM relatives")
+    relatives_list = cursor.fetchall()
+
+    matches = []
+
+    for rem_code, rem_str in remains_list:
+        rem_profile = json.loads(rem_str)
+        
+        for rel_code, rel_str in relatives_list:
+            rel_profile = json.loads(rel_str)
+            
+            score = calculate_str_match(rem_profile, rel_profile)
+            
+            if score >= threshold:
+                matches.append({
+                    "remains_code": rem_code,
+                    "relative_code": rel_code,
+                    "percentage": round(score, 2)
+                })
+
     conn.close()
-    print(f"[✓] تم استيراد وحفظ البصمة الجينية من ملف {file_type.upper()} بنجاح للعينة: {sample_code}")
-    return True
+    return matches
